@@ -43,6 +43,77 @@ float map_signal_post_length(double scale_length)
 	return std::lerp(50.0f, 10.0f, std::clamp(static_cast<float>(scale_length) / 100.0f, 0.0f, 1.0f));
 }
 
+bool map_shaped_signal_clear(TAnimModel *model)
+{
+	if (!model)
+		return false;
+	return std::ranges::any_of(model->m_animlist, [](std::shared_ptr<TAnimContainer> const &animation) {
+		return animation && std::abs(animation->AngleGet()) > 5.0;
+	});
+}
+
+void map_draw_shaped_semaphore_arm(
+	ImDrawList *draw_list, ImVec2 pivot, glm::vec2 post_direction, bool clear, bool hovered)
+{
+	glm::vec2 const normal(-post_direction.y, post_direction.x);
+	glm::vec2 arm_axis = normal;
+	if (clear)
+		arm_axis = glm::normalize(normal + post_direction * 0.7f);
+	float constexpr half_length = 7.0f;
+	float constexpr half_width = 2.0f;
+	std::array<ImVec2, 4> const arm {
+		ImVec2(pivot.x - arm_axis.x * half_length - normal.x * half_width,
+		       pivot.y - arm_axis.y * half_length - normal.y * half_width),
+		ImVec2(pivot.x + arm_axis.x * half_length - normal.x * half_width,
+		       pivot.y + arm_axis.y * half_length - normal.y * half_width),
+		ImVec2(pivot.x + arm_axis.x * half_length + normal.x * half_width,
+		       pivot.y + arm_axis.y * half_length + normal.y * half_width),
+		ImVec2(pivot.x - arm_axis.x * half_length + normal.x * half_width,
+		       pivot.y - arm_axis.y * half_length + normal.y * half_width)
+	};
+	draw_list->AddQuadFilled(arm[0], arm[1], arm[2], arm[3], IM_COL32(205, 40, 35, 255));
+	for (std::size_t corner = 0; corner < arm.size(); ++corner)
+		draw_list->AddLine(
+			arm[corner], arm[(corner + 1) % arm.size()],
+			hovered ? IM_COL32(120, 200, 255, 255) : IM_COL32(25, 25, 25, 255),
+			hovered ? 2.0f : 1.0f);
+	ImVec2 const stripe_center(
+		pivot.x + arm_axis.x * half_length * 0.62f,
+		pivot.y + arm_axis.y * half_length * 0.62f);
+	draw_list->AddLine(
+		ImVec2(stripe_center.x - normal.x * (half_width - 0.5f),
+		       stripe_center.y - normal.y * (half_width - 0.5f)),
+		ImVec2(stripe_center.x + normal.x * (half_width - 0.5f),
+		       stripe_center.y + normal.y * (half_width - 0.5f)),
+		IM_COL32(245, 245, 245, 255), 1.5f);
+}
+
+void map_draw_shaped_shunting_disc(
+	ImDrawList *draw_list, ImVec2 center, glm::vec2 axis, bool clear, bool hovered)
+{
+	float constexpr radius = 6.0f;
+	ImU32 const outline = hovered ? IM_COL32(120, 200, 255, 255) : IM_COL32(20, 20, 20, 255);
+	if (clear)
+	{
+		draw_list->AddLine(
+			ImVec2(center.x - axis.x * radius, center.y - axis.y * radius),
+			ImVec2(center.x + axis.x * radius, center.y + axis.y * radius),
+			outline, hovered ? 5.0f : 3.0f);
+		draw_list->AddLine(
+			ImVec2(center.x - axis.x * radius, center.y - axis.y * radius),
+			ImVec2(center.x + axis.x * radius, center.y + axis.y * radius),
+			IM_COL32(245, 245, 245, 255), 1.5f);
+		return;
+	}
+
+	draw_list->AddCircleFilled(center, radius, IM_COL32(245, 245, 245, 255));
+	draw_list->AddCircle(center, radius, outline, 16, hovered ? 2.0f : 1.0f);
+	draw_list->AddLine(
+		ImVec2(center.x - axis.x * radius * 0.72f, center.y - axis.y * radius * 0.72f),
+		ImVec2(center.x + axis.x * radius * 0.72f, center.y + axis.y * radius * 0.72f),
+		IM_COL32(25, 25, 25, 255), 2.5f);
+}
+
 bool map_point_in_rect(ImVec2 point, ImVec2 minimum, ImVec2 maximum)
 {
 	return point.x >= minimum.x && point.x <= maximum.x &&
@@ -1040,6 +1111,14 @@ void ui::map_panel::render_map_lines(
 						m_hovered_map_object = sem;
 						draw_list->AddLine(center, head_start, IM_COL32(120, 200, 255, 255), 8.0f);
 					}
+					if (sem->shaped)
+					{
+						bool const clear = std::ranges::any_of(sem->models, [](TAnimModel *signal_model) {
+							return map_shaped_signal_clear(signal_model);
+						});
+						map_draw_shaped_shunting_disc(draw_list, head_start, head_axis, clear, shunt_hovered);
+						return;
+					}
 					ImU32 const head_color = shunt_hovered
 						? IM_COL32(120, 200, 255, 255)
 						: IM_COL32(0, 0, 0, 255);
@@ -1117,22 +1196,35 @@ void ui::map_panel::render_map_lines(
 						 post_hovered);
 					if (icon_hovered || post_hovered)
 						m_hovered_map_object = sem;
-					draw_list->AddLine(post_start, post_end, IM_COL32(255, 255, 255, 255), 3.0f);
-					for (int segment = 0; segment < 6; segment += 2)
+					if (sem->shaped)
 					{
-						ImVec2 const segment_start(
-							center.x + post_direction.x * post_segment_length * static_cast<float>(segment),
-							center.y + post_direction.y * post_segment_length * static_cast<float>(segment));
-						ImVec2 const segment_end(
-							center.x + post_direction.x * post_segment_length * static_cast<float>(segment + 1),
-							center.y + post_direction.y * post_segment_length * static_cast<float>(segment + 1));
-						draw_list->AddLine(segment_start, segment_end, IM_COL32(255, 0, 0, 255), 3.0f);
+						draw_list->AddLine(post_start, post_end, IM_COL32(150, 150, 150, 255), 3.0f);
+						if (icon_hovered || post_hovered)
+							draw_list->AddLine(post_start, post_end, IM_COL32(120, 200, 255, 255), 5.0f);
+						bool const clear = std::ranges::any_of(sem->models, [](TAnimModel *signal_model) {
+							return map_shaped_signal_clear(signal_model);
+						});
+						map_draw_shaped_semaphore_arm(draw_list, post_end, post_direction, clear, icon_hovered);
 					}
-					if (icon_hovered || post_hovered)
-						draw_list->AddLine(post_start, post_end, IM_COL32(120, 200, 255, 255), 5.0f);
-					draw_list->AddCircleFilled(post_end, 5.0f, IM_COL32(255, 210, 70, 255));
-					if (icon_hovered || post_hovered)
-						draw_list->AddCircle(post_end, 8.0f, IM_COL32(120, 200, 255, 255), 0, 3.0f);
+					else
+					{
+						draw_list->AddLine(post_start, post_end, IM_COL32(255, 255, 255, 255), 3.0f);
+						for (int segment = 0; segment < 6; segment += 2)
+						{
+							ImVec2 const segment_start(
+								center.x + post_direction.x * post_segment_length * static_cast<float>(segment),
+								center.y + post_direction.y * post_segment_length * static_cast<float>(segment));
+							ImVec2 const segment_end(
+								center.x + post_direction.x * post_segment_length * static_cast<float>(segment + 1),
+								center.y + post_direction.y * post_segment_length * static_cast<float>(segment + 1));
+							draw_list->AddLine(segment_start, segment_end, IM_COL32(255, 0, 0, 255), 3.0f);
+						}
+						if (icon_hovered || post_hovered)
+							draw_list->AddLine(post_start, post_end, IM_COL32(120, 200, 255, 255), 5.0f);
+						draw_list->AddCircleFilled(post_end, 5.0f, IM_COL32(255, 210, 70, 255));
+						if (icon_hovered || post_hovered)
+							draw_list->AddCircle(post_end, 8.0f, IM_COL32(120, 200, 255, 255), 0, 3.0f);
+					}
 					return;
 				}
 
@@ -1667,8 +1759,8 @@ void ui::map_panel::render_contents()
 		follow_position = followed_vehicle->GetPosition();
 		follow_direction = followed_vehicle->VectorFront() * (followed_vehicle->DirectionGet() > 0 ? 1.0 : -1.0);
 		double const zdirection_length = glm::length(follow_direction);
-		if (direction_length > 0.0)
-			follow_direction /= direction_length;
+		if (zdirection_length > 0.0)
+			follow_direction /= zdirection_length;
 		follow_direction = glm::rotateY(follow_direction, -m_manual_rotation);
 	}
 	if (mode == MODE_CAMERA)

@@ -30,6 +30,7 @@ struct semaphore : map_object
 	std::vector<basic_event *> events;
 	TMemCell *memcell = nullptr;
 	bool shunting { false };
+	bool shaped { false };
 
 	gfx::basic_vertex vertex() override {
 		bool stop_signal = memcell && memcell->IsVelocity() && (memcell->Value1() == 0.0);

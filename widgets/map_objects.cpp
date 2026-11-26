@@ -318,6 +318,10 @@ void map::prepare_objects()
 
 		for (auto const &[signal_name, signal] : signals_by_name)
 		{
+			signal->shaped = !signal->models.empty() &&
+				std::ranges::all_of(signal->models, [](TAnimModel const *model) {
+					return model && model->iNumLights == 0;
+				});
 			for (basic_event *event : group.events)
 			{
 				if (!event_belongs_to_signal(event->name(), signal_name))
