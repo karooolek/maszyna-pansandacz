@@ -17,6 +17,28 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/CMake_modules/")
 set(DEPS_DIR ${DEPS_DIR} "${CMAKE_CURRENT_SOURCE_DIR}/ref")
 project("eu07")
 
+# Fast developer configuration: no optimization and no debug information.
+# Available as -DCMAKE_BUILD_TYPE=Development (Ninja/Makefiles) or as a
+# configuration in multi-config generators (Visual Studio, Xcode, Ninja Multi-Config).
+if(CMAKE_CONFIGURATION_TYPES)
+    list(APPEND CMAKE_CONFIGURATION_TYPES Development)
+    list(REMOVE_DUPLICATES CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_CONFIGURATION_TYPES "${CMAKE_CONFIGURATION_TYPES}" CACHE STRING
+        "Available build configurations" FORCE)
+endif()
+
+if(MSVC)
+    set(CMAKE_C_FLAGS_DEVELOPMENT "/Od /DNDEBUG" CACHE STRING
+        "Flags used by the C compiler during Development builds")
+    set(CMAKE_CXX_FLAGS_DEVELOPMENT "/Od /DNDEBUG" CACHE STRING
+        "Flags used by the C++ compiler during Development builds")
+else()
+    set(CMAKE_C_FLAGS_DEVELOPMENT "-O0 -DNDEBUG" CACHE STRING
+        "Flags used by the C compiler during Development builds")
+    set(CMAKE_CXX_FLAGS_DEVELOPMENT "-O0 -DNDEBUG" CACHE STRING
+        "Flags used by the C++ compiler during Development builds")
+endif()
+
 #set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address -fsanitize=undefined")
 #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -fsanitize=undefined -Wformat")
 #set(CMAKE_LD_FLAGS "${CMAKE_LD_FLAGS} -fsanitize=address -fsanitize=undefined")
@@ -897,15 +919,16 @@ if(GENERATE_PDB)
         set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /Zi /MD")
 
         # Add compile options for debugging
-        add_compile_options(/Zi)   # Always enable debug symbols
-        add_link_options(/DEBUG /MAP)
+        # Keep Development builds quick; retain symbols for Debug/Release.
+        add_compile_options($<$<NOT:$<CONFIG:Development>>:/Zi>)
+        add_link_options($<$<NOT:$<CONFIG:Development>>:/DEBUG> /MAP)
 
         # Ensure that the PCH is built with the correct runtime library for each configuration
         set_target_properties(${PROJECT_NAME} eu07_core PROPERTIES
             COMPILE_OPTIONS "$<$<CONFIG:Debug>:/MDd>$<$<CONFIG:Release>:/MD>")
     else()
-        # GCC/Clang (ensure -g is set for all configurations)
-        add_compile_options(-g)
+        # GCC/Clang: omit debug symbols in Development to keep builds quick.
+        add_compile_options($<$<NOT:$<CONFIG:Development>>:-g>)
     endif()
 endif()
 
