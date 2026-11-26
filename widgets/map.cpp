@@ -11,6 +11,7 @@
 #include "widgets/map_icons.h"
 #include "world/Sweep.h"
 #include <format>
+#include <numbers>
 #include <ranges>
 #include <tuple>
 #include <cstdint>
@@ -37,10 +38,31 @@ float map_signal_light_opacity(std::tuple<float, float, std::optional<glm::vec3>
 	return std::clamp(std::get<1>(state), 0.0f, 1.0f);
 }
 
+float map_signal_post_length(double scale_length)
+{
+	return std::lerp(50.0f, 10.0f, std::clamp(static_cast<float>(scale_length) / 100.0f, 0.0f, 1.0f));
+}
+
 bool map_point_in_rect(ImVec2 point, ImVec2 minimum, ImVec2 maximum)
 {
 	return point.x >= minimum.x && point.x <= maximum.x &&
 	       point.y >= minimum.y && point.y <= maximum.y;
+}
+
+std::array<ImVec2, 9> map_indicator_semicircle(
+	ImVec2 base, glm::vec2 axis, glm::vec2 normal, float radius)
+{
+	std::array<ImVec2, 9> points;
+	points.front() = ImVec2(base.x + normal.x * radius, base.y + normal.y * radius);
+	for (int step = 1; step < 8; ++step)
+	{
+		float const angle = std::numbers::pi_v<float> * static_cast<float>(step) / 8.0f;
+		points[static_cast<std::size_t>(step)] = ImVec2(
+			base.x + axis.x * std::sin(angle) * radius + normal.x * std::cos(angle) * radius,
+			base.y + axis.y * std::sin(angle) * radius + normal.y * std::cos(angle) * radius);
+	}
+	points.back() = ImVec2(base.x - normal.x * radius, base.y - normal.y * radius);
+	return points;
 }
 
 bool map_world_bounds_visible(
@@ -1066,7 +1088,7 @@ void ui::map_panel::render_map_lines(
 				else
 					dir = glm::normalize(dir);
 				glm::vec2 const post_direction(dir.x, dir.y);
-				float const post_length = std::lerp(50.0f, 10.0f, std::clamp(static_cast<float>(scale_length) / 100.0f, 0.0f, 1.0f));
+				float const post_length = map_signal_post_length(scale_length);
 				float const post_segment_length = post_length / 6.0f;
 				ImVec2 const post_start(center.x, center.y);
 				ImVec2 const post_end(
@@ -1189,6 +1211,103 @@ void ui::map_panel::render_map_lines(
 		if (object_position.x < origin.x - 10.0f || object_position.x > origin.x + surface_size.x + 10.0f ||
 		    object_position.y < origin.y - 10.0f || object_position.y > origin.y + surface_size.y + 10.0f)
 			continue;
+
+		if (auto const indicator = std::dynamic_pointer_cast<map::track_indicator>(object))
+		{
+			glm::vec3 const track_direction(
+				indicator->direction_to_track.x, 0.0f, indicator->direction_to_track.y);
+			glm::vec3 const marker_direction = glm::length2(track_direction) > 1e-8f
+				? track_direction
+				: glm::vec3(1.0f, 0.0f, 0.0f);
+			ImVec2 const direction_end = to_screen(object->location + marker_direction);
+			glm::vec2 post_direction(
+				direction_end.x - object_position.x,
+				direction_end.y - object_position.y);
+			if (glm::length2(post_direction) <= 1e-8f || !std::isfinite(glm::length2(post_direction)))
+				continue;
+			else
+				post_direction = glm::normalize(post_direction);
+			post_direction = glm::vec2(post_direction.y, -post_direction.x);
+			float const post_length = map_signal_post_length(scale_length) / 3.0f;
+			ImVec2 const post_end(
+				object_position.x + post_direction.x * post_length,
+				object_position.y + post_direction.y * post_length);
+			float constexpr sign_radius = 5.5f;
+			ImVec2 const sign_center(
+				post_end.x + post_direction.x * sign_radius,
+				post_end.y + post_direction.y * sign_radius);
+			glm::vec2 const sign_normal(-post_direction.y, post_direction.x);
+			glm::vec2 const mouse_from_post(mouse_position.x - object_position.x, mouse_position.y - object_position.y);
+			float const post_projection = std::clamp(glm::dot(mouse_from_post, post_direction), 0.0f, post_length);
+			glm::vec2 const nearest_post_point = glm::vec2(object_position.x, object_position.y) +
+				post_direction * post_projection;
+			bool const indicator_hovered = mouse_over_map &&
+				(glm::length2(glm::vec2(mouse_position.x, mouse_position.y) - nearest_post_point) <= 25.0f ||
+				 (std::abs(glm::dot(
+					  glm::vec2(mouse_position.x - sign_center.x, mouse_position.y - sign_center.y),
+					  post_direction)) <= sign_radius + 3.0f &&
+				  std::abs(glm::dot(
+					  glm::vec2(mouse_position.x - sign_center.x, mouse_position.y - sign_center.y),
+					  sign_normal)) <= sign_radius + 3.0f));
+			ImU32 const sign_outline = indicator_hovered
+				? IM_COL32(120, 200, 255, 255)
+				: IM_COL32(245, 245, 245, 255);
+			draw_list->AddLine(
+				object_position, post_end,
+				indicator_hovered ? sign_outline : IM_COL32(150, 150, 150, 255),
+				indicator_hovered ? 4.0f : 2.0f);
+
+			if (indicator->indicator_type == map::track_indicator::type::w4)
+			{
+				std::array<ImVec2, 4> const corners {
+					ImVec2(sign_center.x - post_direction.x * sign_radius - sign_normal.x * sign_radius,
+					       sign_center.y - post_direction.y * sign_radius - sign_normal.y * sign_radius),
+					ImVec2(sign_center.x + post_direction.x * sign_radius - sign_normal.x * sign_radius,
+					       sign_center.y + post_direction.y * sign_radius - sign_normal.y * sign_radius),
+					ImVec2(sign_center.x + post_direction.x * sign_radius + sign_normal.x * sign_radius,
+					       sign_center.y + post_direction.y * sign_radius + sign_normal.y * sign_radius),
+					ImVec2(sign_center.x - post_direction.x * sign_radius + sign_normal.x * sign_radius,
+					       sign_center.y - post_direction.y * sign_radius + sign_normal.y * sign_radius)
+				};
+				draw_list->AddQuadFilled(corners[0], corners[1], corners[2], corners[3], IM_COL32(0, 0, 0, 255));
+				for (std::size_t corner = 0; corner < corners.size(); ++corner)
+					draw_list->AddLine(
+						corners[corner], corners[(corner + 1) % corners.size()],
+						sign_outline, indicator_hovered ? 2.5f : 1.0f);
+				draw_list->AddLine(
+					ImVec2(sign_center.x - post_direction.x * 3.5f, sign_center.y - post_direction.y * 3.5f),
+					ImVec2(sign_center.x + post_direction.x * 3.5f, sign_center.y + post_direction.y * 3.5f),
+					IM_COL32(255, 255, 255, 255), 2.0f);
+				draw_list->AddLine(
+					ImVec2(sign_center.x - sign_normal.x * 3.5f, sign_center.y - sign_normal.y * 3.5f),
+					ImVec2(sign_center.x + sign_normal.x * 3.5f, sign_center.y + sign_normal.y * 3.5f),
+					IM_COL32(255, 255, 255, 255), 2.0f);
+			}
+			else
+			{
+				std::array<ImVec2, 9> const semicircle =
+					map_indicator_semicircle(post_end, post_direction, sign_normal, sign_radius);
+				std::array<ImVec2, 9> const outer_semicircle =
+					map_indicator_semicircle(post_end, post_direction, sign_normal, sign_radius + 1.5f);
+				draw_list->AddConvexPolyFilled(
+					semicircle.data(), static_cast<int>(semicircle.size()), IM_COL32(255, 255, 255, 255));
+				for (std::size_t point = 0; point + 1 < semicircle.size(); ++point)
+					draw_list->AddLine(
+						semicircle[point], semicircle[point + 1],
+						IM_COL32(0, 0, 0, 255), indicator_hovered ? 2.5f : 1.0f);
+				draw_list->AddLine(
+					semicircle.back(), semicircle.front(),
+					IM_COL32(0, 0, 0, 255), indicator_hovered ? 2.5f : 1.0f);
+				for (std::size_t point = 0; point + 1 < outer_semicircle.size(); ++point)
+					draw_list->AddLine(
+						outer_semicircle[point], outer_semicircle[point + 1],
+						sign_outline, indicator_hovered ? 2.5f : 1.0f);
+				draw_list->AddLine(
+					outer_semicircle.back(), outer_semicircle.front(),
+					sign_outline, indicator_hovered ? 2.5f : 1.0f);
+			}
+			continue;
+		}
 
 		bool const object_hovered = mouse_over_map &&
 			glm::length2(glm::vec2(mouse_position.x - object_position.x, mouse_position.y - object_position.y)) <= 100.0f;

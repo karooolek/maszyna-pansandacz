@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cctype>
 #include <ranges>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -90,6 +91,27 @@ bool is_shp_launcher(basic_event const *first_event, basic_event const *second_e
 	return is_shp_event(first_event) || is_shp_event(second_event);
 }
 
+std::optional<map::track_indicator::type> track_indicator_model_type(std::string_view model_path)
+{
+	std::string path{model_path};
+	std::ranges::transform(path, path.begin(), [](unsigned char character) {
+		return character == '\\' ? '/' : static_cast<char>(std::tolower(character));
+	});
+	auto const filename_start = path.find_last_of('/');
+	std::string_view const filename = filename_start == std::string::npos
+		? std::string_view(path)
+		: std::string_view(path).substr(filename_start + 1);
+	if (filename.empty())
+		return std::nullopt;
+	auto const extension_start = filename.find('.');
+	std::string_view const basename = filename.substr(0, extension_start);
+	if (basename == "w4")
+		return map::track_indicator::type::w4;
+	if (basename == "w5")
+		return map::track_indicator::type::w5;
+	return std::nullopt;
+}
+
 bool assign_cross_switch(map::track_switch &sw, std::string const &switch_name, std::string const &id, std::size_t index)
 {
 	sw.action[index] = simulation::Events.FindEvent(switch_name + ":" + id);
@@ -149,6 +171,26 @@ void collect_group_nodes(
 void map::prepare_objects()
 {
 	Objects.entries.clear();
+
+	for (TAnimModel *model : simulation::Instances.sequence())
+	{
+		if (!model || !model->Model())
+			continue;
+		auto indicator_type = track_indicator_model_type(model->Model()->NameGet());
+		if (!indicator_type)
+			indicator_type = track_indicator_model_type(model->name());
+		if (!indicator_type)
+			continue;
+
+		auto indicator = std::make_shared<track_indicator>();
+		indicator->indicator_type = *indicator_type;
+		indicator->name = model->Model()->NameGet();
+		indicator->location = model->location();
+		float const rotation_offset = *indicator_type == track_indicator::type::w4 ? 270.0f : 90.0f;
+		float const yaw = glm::radians(model->Angles().y + rotation_offset);
+		indicator->direction_to_track = glm::vec2(-std::sin(yaw), -std::cos(yaw));
+		Objects.entries.push_back(std::move(indicator));
+	}
 
 	std::unordered_map<scene::group_handle, scene_map_group> groups;
 	collect_group_nodes(groups, simulation::Instances.sequence());
@@ -369,6 +411,8 @@ map::sorted_object_list map::objects::find_in_range(glm::vec3 from, float distan
 
 	for (auto const entry : entries)
 	{
+		if (std::dynamic_pointer_cast<track_indicator>(entry))
+			continue;
 		glm::vec3 entry_location = entry->location;
 		glm::vec3 search_point = from;
 

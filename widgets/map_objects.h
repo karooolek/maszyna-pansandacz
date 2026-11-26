@@ -68,6 +68,18 @@ struct track_switch : map_object
     }
 };
 
+struct track_indicator : map_object
+{
+	enum class type
+	{
+		w4,
+		w5
+	};
+
+	type indicator_type { type::w4 };
+	glm::vec2 direction_to_track {};
+};
+
 // training obstacle description
 struct obstacle : map_object
 {
