@@ -144,8 +144,14 @@ bool map_toolbar_icon_button(
 
 }
 
-ui::map_panel::map_panel() : ui_panel(STR_C("Map"), false)
+ui::map_panel::map_panel(ui_layer &Owner)
+	: map_panel(Owner, STR_C("Map")) {}
+
+ui::map_panel::map_panel(ui_layer &Owner, std::string Identifier)
+	: ui_panel(std::move(Identifier), false),
+	  m_owner{Owner}
 {
+	m_name += "##" + std::to_string(reinterpret_cast<std::uintptr_t>(this));
 	size_min = {200, 200};
 	size_max = {fb_size, fb_size};
 	window_flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse |
@@ -1422,7 +1428,6 @@ void ui::map_panel::render_contents()
         is_open = false;
         return;
     }
-
 	if (!simulation::Train && mode == MODE_VEHICLE)
 		mode = MODE_MANUAL;
 
@@ -1484,6 +1489,14 @@ void ui::map_panel::render_contents()
 		    "reset-heading", STR_C("Reset map rotation"), map_icons::icon::rotate, false, reset_heading_hovered))
 		m_manual_rotation = 0.0f;
 	toolbar_hovered = toolbar_hovered || reset_heading_hovered;
+	ImGui::SameLine();
+	if (ImGui::SmallButton("+##open-another-map"))
+	{
+		auto *panel{new map_panel(m_owner, STR_C("Map"))};
+		m_owner.add_owned_panel(panel);
+	}
+	bool const open_another_hovered = ImGui::IsItemHovered();
+	toolbar_hovered = toolbar_hovered || open_another_hovered;
 
 	glm::mat4 aspect_transform;
 	float aspect = surface_size.y / surface_size.x;

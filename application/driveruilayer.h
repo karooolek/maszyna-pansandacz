@@ -66,7 +66,7 @@ private:
 
 	command_relay m_relay;
 	ui::vehiclelist_panel m_vehiclelist { ui::vehiclelist_panel(*this) };
-	ui::map_panel m_mappanel;
+	ui::map_panel m_mappanel{*this};
 	ui::time_panel m_timepanel;
 	ui::cameraview_panel m_cameraviewpanel;
 };

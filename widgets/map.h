@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <chrono>
 #include <cstddef>
+#include <memory>
 #include <unordered_map>
 
 #include "application/uilayer.h"
@@ -222,8 +223,12 @@ class map_panel : public ui_panel
     std::vector<std::pair<TTrack*, int>> highlighted_switches;
 
   public:
-	map_panel();
+	explicit map_panel(ui_layer &Owner);
 	void render_contents() override;
+
+  private:
+	map_panel(ui_layer &Owner, std::string Identifier);
+	ui_layer &m_owner;
 };
 
 void handle_map_object_click(ui_panel &parent, std::shared_ptr<map::map_object> &obj);
