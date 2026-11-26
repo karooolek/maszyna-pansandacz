@@ -1257,7 +1257,7 @@ void ui::map_panel::render_map_lines(
 				indicator_hovered ? sign_outline : IM_COL32(150, 150, 150, 255),
 				indicator_hovered ? 4.0f : 2.0f);
 
-			if (indicator->indicator_type == map::track_indicator::type::w4)
+			if (indicator->indicator_type != map::track_indicator::type::w5)
 			{
 				std::array<ImVec2, 4> const corners {
 					ImVec2(sign_center.x - post_direction.x * sign_radius - sign_normal.x * sign_radius,
@@ -1274,14 +1274,36 @@ void ui::map_panel::render_map_lines(
 					draw_list->AddLine(
 						corners[corner], corners[(corner + 1) % corners.size()],
 						sign_outline, indicator_hovered ? 2.5f : 1.0f);
-				draw_list->AddLine(
-					ImVec2(sign_center.x - post_direction.x * 3.5f, sign_center.y - post_direction.y * 3.5f),
-					ImVec2(sign_center.x + post_direction.x * 3.5f, sign_center.y + post_direction.y * 3.5f),
-					IM_COL32(255, 255, 255, 255), 2.0f);
-				draw_list->AddLine(
-					ImVec2(sign_center.x - sign_normal.x * 3.5f, sign_center.y - sign_normal.y * 3.5f),
-					ImVec2(sign_center.x + sign_normal.x * 3.5f, sign_center.y + sign_normal.y * 3.5f),
-					IM_COL32(255, 255, 255, 255), 2.0f);
+				if (indicator->indicator_type == map::track_indicator::type::w4)
+				{
+					draw_list->AddLine(
+						ImVec2(sign_center.x - post_direction.x * 3.5f, sign_center.y - post_direction.y * 3.5f),
+						ImVec2(sign_center.x + post_direction.x * 3.5f, sign_center.y + post_direction.y * 3.5f),
+						IM_COL32(255, 255, 255, 255), 2.0f);
+					draw_list->AddLine(
+						ImVec2(sign_center.x - sign_normal.x * 3.5f, sign_center.y - sign_normal.y * 3.5f),
+						ImVec2(sign_center.x + sign_normal.x * 3.5f, sign_center.y + sign_normal.y * 3.5f),
+						IM_COL32(255, 255, 255, 255), 2.0f);
+				}
+				else
+				{
+					float constexpr z1_radius = 4.5f;
+					float constexpr z1_half_gap = 0.6f;
+					ImVec2 const upper_chord(
+						sign_center.x + post_direction.x * z1_half_gap,
+						sign_center.y + post_direction.y * z1_half_gap);
+					ImVec2 const lower_chord(
+						sign_center.x - post_direction.x * z1_half_gap,
+						sign_center.y - post_direction.y * z1_half_gap);
+					std::array<ImVec2, 9> const upper_half = map_indicator_semicircle(
+						upper_chord, post_direction, sign_normal, z1_radius);
+					std::array<ImVec2, 9> const lower_half = map_indicator_semicircle(
+						lower_chord, -post_direction, sign_normal, z1_radius);
+					draw_list->AddConvexPolyFilled(
+						upper_half.data(), static_cast<int>(upper_half.size()), IM_COL32(255, 255, 255, 255));
+					draw_list->AddConvexPolyFilled(
+						lower_half.data(), static_cast<int>(lower_half.size()), IM_COL32(255, 255, 255, 255));
+				}
 			}
 			else
 			{
@@ -1644,7 +1666,7 @@ void ui::map_panel::render_contents()
 
 		follow_position = followed_vehicle->GetPosition();
 		follow_direction = followed_vehicle->VectorFront() * (followed_vehicle->DirectionGet() > 0 ? 1.0 : -1.0);
-		double const direction_length = glm::length(follow_direction);
+		double const zdirection_length = glm::length(follow_direction);
 		if (direction_length > 0.0)
 			follow_direction /= direction_length;
 		follow_direction = glm::rotateY(follow_direction, -m_manual_rotation);

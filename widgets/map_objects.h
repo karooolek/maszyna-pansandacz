@@ -73,7 +73,8 @@ struct track_indicator : map_object
 	enum class type
 	{
 		w4,
-		w5
+		w5,
+		z1
 	};
 
 	type indicator_type { type::w4 };

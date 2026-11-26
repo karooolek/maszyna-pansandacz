@@ -109,6 +109,8 @@ std::optional<map::track_indicator::type> track_indicator_model_type(std::string
 		return map::track_indicator::type::w4;
 	if (basename == "w5")
 		return map::track_indicator::type::w5;
+	if (basename == "z1")
+		return map::track_indicator::type::z1;
 	return std::nullopt;
 }
 
@@ -187,7 +189,11 @@ void map::prepare_objects()
 		indicator->name = model->Model()->NameGet();
 		indicator->location = model->location();
 		float const rotation_offset = *indicator_type == track_indicator::type::w4 ? 270.0f : 90.0f;
-		float const yaw = glm::radians(model->Angles().y + rotation_offset);
+		float yaw_degrees = model->Angles().y + rotation_offset;
+		if (float const nearest_right_angle = std::round(yaw_degrees / 90.0f) * 90.0f;
+		    std::abs(yaw_degrees - nearest_right_angle) <= 5.0f)
+			yaw_degrees = nearest_right_angle;
+		float const yaw = glm::radians(yaw_degrees);
 		indicator->direction_to_track = glm::vec2(-std::sin(yaw), -std::cos(yaw));
 		Objects.entries.push_back(std::move(indicator));
 	}
